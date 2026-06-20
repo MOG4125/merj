@@ -7,7 +7,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # matrix setup boots up both virtual systems in the cloud side-by-side
+        # Matrix setup boots up both virtual systems in the cloud side-by-side
         os: [macos-latest, ubuntu-latest] 
 
     steps:
@@ -35,17 +35,18 @@ jobs:
       run: |
         pyinstaller --onefile --windowed --clean --name="merj" merj.pyw
 
-    # UPLOAD AUTOMATION: PIPES LOGS DIRECTLY TO WEB DASHBOARD
+    # UPLOAD AUTOMATION: TARGETS THE CORRECT EXTENSION PATHS
     - name: Upload Finished Standalone Mac App
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
         name: merj-macOS-Bundle
-        path: dist/merj.app/ # Compiles into a clean .app folder bundle for Mac users
+        path: dist/merj.app/
+        include-hidden-files: true # Crucial for packing sub-bundle plist contents safely
 
     - name: Upload Finished Standalone Linux Binary
       if: matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: merj-Linux-Binary
-        path: dist/merj # Compiles into a clean extension-less executable file for Linux users
+        path: dist/merj # Compiles into a clean extension-less executable file
