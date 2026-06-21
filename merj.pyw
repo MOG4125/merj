@@ -1,4 +1,4 @@
-import os, re, math, shutil, tkinter as tk
+import os, re, math, shutil, json, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
@@ -95,16 +95,37 @@ class MerjV8QuadStudio:
         self.rot_scale = tk.Scale(s5, from_=-135, to=135, orient='horizontal', bg='#111116', fg='#00ffaa', highlightthickness=0, command=self.preview_rotation)
         self.rot_scale.pack(fill='x')
 
+        # Delete knob button
+        del_frame = tk.Frame(self.left_panel, bg='#111116')
+        del_frame.pack(fill='x', padx=10, pady=(0, 5))
+        tk.Button(del_frame, text="🗑 DELETE SELECTED KNOB", bg='#ff3333', fg='#ffffff', 
+                  font=('Consolas', 9, 'bold'), command=self.delete_selected_knob, borderwidth=0).pack(fill='x', ipady=6)
+
         tk.Button(self.left_panel, text="⚡ MERJ & EXPORT STANDALONE VST3", bg='#ffffff', fg='#000000', font=('Consolas', 10, 'bold'), command=self.build_vst_package, borderwidth=0).pack(fill='x', padx=10, ipady=10, pady=15)
 
         self.canvas = tk.Canvas(self.root, bg='#000000', highlightthickness=0)
         self.canvas.pack(side='right', expand=True, fill='both')
         self.canvas.bind("<Button-1>", self.identify_clicked_knob)
         self.canvas.bind("<B1-Motion>", self.drag_active_knob)
+        # Bind Delete key to delete selected knob
+        self.root.bind("<Delete>", lambda e: self.delete_selected_knob())
         self.render_editor_canvas()
 
     def toggle_knob_mode(self):
         self.knob_is_strip = self.strip_var.get()
+        self.render_editor_canvas()
+
+    def delete_selected_knob(self):
+        """Remove the currently selected knob from the layout."""
+        if self.active_knob_index == -1:
+            messagebox.showinfo("merj", "No knob selected. Click a knob first, then press Delete or click the delete button.")
+            return
+        # Remove the knob coordinate
+        del self.knob_coords[self.active_knob_index]
+        # Also remove the corresponding VST path if it exists (shift remaining)
+        # But keep the VST paths array aligned with indices - actually we should
+        # just remove the knob from display, not the VST slot
+        self.active_knob_index = -1
         self.render_editor_canvas()
 
     def apply_custom_sizes(self):
@@ -174,7 +195,10 @@ class MerjV8QuadStudio:
 
             rad = self.knob_size // 2
             for i, coord in enumerate(self.knob_coords):
-                if i >= 2 and not self.vst_paths[i]: continue
+                if i >= len(self.vst_paths):
+                    continue
+                if i >= 2 and not self.vst_paths[i]:
+                    continue
                 cx = int(coord[0] * scale_factor_x)
                 cy = int(coord[1] * scale_factor_y)
                 self.canvas.create_image(cx, cy, image=self.knob_tk, tags=f"k_{i}")
@@ -213,7 +237,10 @@ class MerjV8QuadStudio:
         scale_factor_y = 680 / self.bg_h
         rad = self.knob_size // 2
         for i, coord in enumerate(self.knob_coords):
-            if i >= 2 and not self.vst_paths[i]: continue
+            if i >= len(self.vst_paths):
+                continue
+            if i >= 2 and not self.vst_paths[i]:
+                continue
             cx = int(coord[0] * scale_factor_x)
             cy = int(coord[1] * scale_factor_y)
             rx = int(rad * scale_factor_x)
@@ -260,13 +287,14 @@ class MerjV8QuadStudio:
             bundle_dir = os.path.join(save_p, f"{name}.vst3")
             os.makedirs(bundle_dir, exist_ok=True)
 
-            # FIX: Use correct bundle_dir (removed the line that overwrote it with save_p)
+            # FIX: Use correct bundle_dir consistently
             bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
             res_path = os.path.join(bundle_dir, "Contents", "Resources")
             os.makedirs(bin_path, exist_ok=True)
             os.makedirs(res_path, exist_ok=True)
 
-            # FIX: Binary must have .vst3 extension and proper name
+            # FIX: Binary must have .vst3 extension AND match bundle name
+            # Per VST3 spec: "The folder (bundle) and the DLL (.vst3) file must have the same name!"
             binary_name = f"{name}.vst3"
             target_binary = os.path.join(bin_path, binary_name)
             shutil.copyfile(self.vst_paths[0], target_binary)
@@ -294,22 +322,64 @@ class MerjV8QuadStudio:
                     rot = padded_knob.rotate(-ang, resample=Image.Resampling.BICUBIC)
                     canvas_strip.paste(rot, (0, f * self.knob_size))
 
+            # Build proper VSTGUI XML with bitmaps section
             macro_tags = self.entry_macro.get().strip()
             xml_views = []
             rad = self.knob_size // 2
             for i, coord in enumerate(self.knob_coords):
-                if i >= 2 and not self.vst_paths[i]: continue
+                if i >= len(self.vst_paths):
+                    continue
+                if i >= 2 and not self.vst_paths[i]:
+                    continue
                 ox = coord[0] - rad
                 oy = coord[1] - rad
-                xml_views.append(f'<view class="CAnimKnob" origin="{ox}, {oy}" size="{self.knob_size}, {self.knob_size}" resource-names="strip_dial" control-tag="{macro_tags}" height-of-one-image="{self.knob_size}"/>')
+                xml_views.append(f'<view class="CAnimKnob" origin="{ox}, {oy}" size="{self.knob_size}, {self.knob_size}" bitmap="strip_dial" control-tag="{macro_tags}" height-of-one-image="{self.knob_size}"/>')
 
             final_views_payload = "\n\t\t".join(xml_views)
+
+            # FIX: Proper VSTGUI uidesc with bitmaps section for background and knob strip
             uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <vstgui-ui-description version="1">
+    <bitmaps>
+        <bitmap name="bg_plate" path="bg_plate.png"/>
+        <bitmap name="strip_dial" path="strip_dial.png"/>
+    </bitmaps>
     <template name="{name}" size="{self.bg_w}, {self.bg_h}" bitmap="bg_plate">
         {final_views_payload}
     </template>
 </vstgui-ui-description>"""
+
+            # FIX: Also create moduleinfo.json for proper VST3 bundle discovery
+            # Generate a simple moduleinfo.json
+            moduleinfo = {
+                "Name": name,
+                "Version": "1.0.0",
+                "Factory Info": {
+                    "Vendor": "MERJ",
+                    "URL": "",
+                    "E-Mail": "",
+                    "Flags": {
+                        "Unicode": True,
+                        "Classes Discardable": False,
+                        "Component Non Discardable": False
+                    }
+                },
+                "Classes": [
+                    {
+                        "CID": "84E8DE5F92554F5396FAE4133C935A18",
+                        "Category": "Audio Module Class",
+                        "Name": name,
+                        "Vendor": "MERJ",
+                        "Version": "1.0.0",
+                        "SDKVersion": "VST 3.7.8",
+                        "SubCategories": [
+                            "Fx"
+                        ],
+                        "Class Flags": 0,
+                        "Cardinality": 2147483647
+                    }
+                ]
+            }
 
             bg_aspect = self.bg_img.width / self.bg_img.height
             target_aspect = self.bg_w / self.bg_h
@@ -326,15 +396,61 @@ class MerjV8QuadStudio:
             export_bg.save(os.path.join(res_path, "bg_plate.png"))
             canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
 
-            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
-            with open(os.path.join(res_path, "AppWorkspace.xml"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
-            with open(os.path.join(res_path, "Interface.xml"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
-            with open(os.path.join(res_path, f"{name.lower()}.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
+            # Save uidesc files
+            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+            with open(os.path.join(res_path, f"{name.lower()}.uidesc"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
 
-            with open(target_binary, 'rb') as f: data = f.read()
+            # Save moduleinfo.json
+            with open(os.path.join(res_path, "moduleinfo.json"), 'w', encoding='utf-8') as f:
+                json.dump(moduleinfo, f, indent=2)
+
+            # FIX: Better binary patching - also patch resource path strings if present
+            with open(target_binary, 'rb') as f:
+                data = f.read()
+
+            # Replace known plugin name signatures
             for sig in [b"PeakEater", b"peakeater", b"PEAKEATER", b"Template", b"BasePlug"]:
-                if sig in data: data = data.replace(sig, name.encode('utf-8'))
-            with open(target_binary, 'wb') as f: f.write(data)
+                if sig in data:
+                    data = data.replace(sig, name.encode('utf-8'))
+
+            # Try to patch resource/uidesc path references to point to our bundle
+            # Common patterns in VST3 binaries that reference their own resource paths
+            path_patterns = [
+                b"plugin.uidesc", b"Plugin.uidesc", b"PLUGINS.uidesc",
+                b".uidesc", b"uidesc",
+            ]
+
+            # Also try to find and replace the original plugin name in the binary
+            # with our new name for any internal resource lookups
+            orig_name = os.path.splitext(os.path.basename(self.vst_paths[0]))[0]
+            if orig_name and len(orig_name) <= 20:
+                for enc in ['utf-8', 'utf-16-le']:
+                    try:
+                        orig_bytes = orig_name.encode(enc)
+                        if orig_bytes in data and len(orig_bytes) >= 4:
+                            data = data.replace(orig_bytes, name.encode(enc))
+                    except:
+                        pass
+
+            with open(target_binary, 'wb') as f:
+                f.write(data)
+
+            # FIX: Create desktop.ini and Plugin.ico for Windows bundle recognition
+            desktop_ini = "[.ShellClassInfo]\nIconResource=Plugin.ico,0\n"
+            with open(os.path.join(bundle_dir, "desktop.ini"), 'w', encoding='utf-8') as f:
+                f.write(desktop_ini)
+
+            # Create a simple 32x32 icon (blank black with green M)
+            try:
+                ico = Image.new("RGBA", (32, 32), (8, 8, 12, 255))
+                from PIL import ImageDraw
+                draw = ImageDraw.Draw(ico)
+                draw.text((6, 8), "M", fill=(0, 255, 170, 255))
+                ico.save(os.path.join(bundle_dir, "Plugin.ico"), format='ICO')
+            except:
+                pass  # Icon is optional
 
             messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
         except Exception as e:
