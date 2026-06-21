@@ -15,7 +15,8 @@ class MerjV8QuadStudio:
         self.knob_img = None
         self.knob_tk = None
         
-        self.knob_coords = [[150, 200], [300, 200], [450, 200], [600, 200]]
+        # FIXED: Initialized default visual grid coordinates for the 4 sliders
+        self.knob_coords = [[100, 300], [250, 300], [400, 300], [550, 300]]
         self.active_knob_index = -1
         self.test_angle = 0
         self.lbl_statuses = []
@@ -109,7 +110,7 @@ class MerjV8QuadStudio:
                 if sig in data: data = data.replace(sig, name.encode('utf-8'))
             with open(target_binary, 'wb') as f: f.write(data)
 
-            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
+            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\\nSaved to: {bundle_dir}")
         except Exception as e:
             messagebox.showerror("merj Fault", f"System compilation thread crashed: {str(e)}")
 
