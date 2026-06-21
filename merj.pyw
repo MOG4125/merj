@@ -8,13 +8,13 @@ class MerjV8QuadStudio:
         self.root.title("merj v8.0 // Quad Engine Visual VST Studio")
         self.root.geometry("1200x700")
         self.root.configure(bg='#08080c')
-        
+
         self.vst_paths = ["", "", "", ""]
         self.bg_img = None
         self.bg_tk = None
         self.knob_img = None
         self.knob_tk = None
-        
+
         # Initialized standard functional default layout coordinates
         self.knob_coords = [[100, 150], [250, 150], [400, 150], [550, 150]]
         self.active_knob_index = -1
@@ -109,9 +109,43 @@ class MerjV8QuadStudio:
     def identify_clicked_knob(self, event):
         self.active_knob_index = -1
         for i, coord in enumerate(self.knob_coords):
-            if abs(event.x - coord[0]) = 2 and not self.vst_paths[i]: continue
+            if i >= 2 and not self.vst_paths[i]:
+                continue
+            if abs(event.x - coord[0]) <= 30 and abs(event.y - coord[1]) <= 30:
+                self.active_knob_index = i
+                break
+        self.render_editor_canvas()
+
+    def drag_active_knob(self, event):
+        if self.active_knob_index != -1:
+            self.knob_coords[self.active_knob_index] = [event.x, event.y]
+            self.render_editor_canvas()
+
+    def build_vst_package(self):
+        if not self.vst_paths[0]:
+            messagebox.showwarning("merj Fault", "Base VST A is required to compile.")
+            return
+
+        save_p = filedialog.asksaveasfilename(
+            defaultextension=".vst3",
+            filetypes=[("VST3 Bundle", "*.vst3")],
+            title="Export Standalone VST3 Package"
+        )
+        if not save_p:
+            return
+
+        try:
+            macro_tags = self.entry_macro.get().strip()
+            name = self.entry_name.get().strip()[:9]
+            if not name:
+                name = "MERJVST"
+
+            xml_views = []
+            for i, coord in enumerate(self.knob_coords):
+                if i >= 2 and not self.vst_paths[i]:
+                    continue
                 xml_views.append(f'<view class="CAnimKnob" origin="{coord[0]-30}, {coord[1]-30}" size="60, 60" resource-names="strip_dial" control-tag="{macro_tags}" height-of-one-image="60"/>')
-            
+
             final_views_payload = "\n\t\t".join(xml_views)
             uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <vstgui-ui-description version="1">
@@ -123,19 +157,30 @@ class MerjV8QuadStudio:
             bundle_dir = save_p if save_p.endswith(".vst3") else save_p + ".vst3"
             bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
             res_path = os.path.join(bundle_dir, "Contents", "Resources")
-            os.makedirs(bin_path, exist_ok=True); os.makedirs(res_path, exist_ok=True)
+            os.makedirs(bin_path, exist_ok=True)
+            os.makedirs(res_path, exist_ok=True)
 
             target_binary = os.path.join(bin_path, os.path.basename(bundle_dir).replace(".vst3", ""))
             shutil.copyfile(self.vst_paths[0], target_binary)
 
-            self.bg_img.resize((800, 600)).save(os.path.join(res_path, "bg_plate.png"))
-            canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
-            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
+            if self.bg_img:
+                self.bg_img.resize((800, 600)).save(os.path.join(res_path, "bg_plate.png"))
 
-            with open(target_binary, 'rb') as f: data = f.read()
+            if self.knob_img:
+                # Generate a simple strip: just the single knob image for now
+                canvas_strip = self.knob_img.resize((60, 60))
+                canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
+
+            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+
+            with open(target_binary, 'rb') as f:
+                data = f.read()
             for sig in [b"PeakEater", b"Template", b"BasePlug"]:
-                if sig in data: data = data.replace(sig, name.encode('utf-8'))
-            with open(target_binary, 'wb') as f: data = f.write(data)
+                if sig in data:
+                    data = data.replace(sig, name.encode('utf-8'))
+            with open(target_binary, 'wb') as f:
+                f.write(data)
 
             messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
         except Exception as e:
