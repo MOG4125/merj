@@ -20,6 +20,9 @@ class MerjV8QuadStudio:
         self.bg_h = 600
         self.knob_size = 60
 
+        # Knob mode: False = single knob (auto-generate strip), True = uploaded image IS the strip
+        self.knob_is_strip = False
+
         # Initialized functional default layout coordinates
         self.knob_coords = [[100, 100], [200, 100], [300, 100], [400, 100]]
         self.active_knob_index = -1
@@ -48,7 +51,16 @@ class MerjV8QuadStudio:
         s2 = tk.LabelFrame(self.left_panel, text="2. UI Graphic Canvas Assets", bg='#111116', fg='#888899', font=('Consolas', 8))
         s2.pack(fill='x', padx=10, pady=4)
         ttk.Button(s2, text="LOAD BACKDROP PANEL", command=self.load_bg_asset).pack(fill='x', padx=10, pady=2)
-        ttk.Button(s2, text="LOAD UNIQUE KNOB STICKER", command=self.load_knob_asset).pack(fill='x', padx=10, pady=2)
+        ttk.Button(s2, text="LOAD KNOB IMAGE", command=self.load_knob_asset).pack(fill='x', padx=10, pady=2)
+
+        # Knob mode toggle
+        self.strip_var = tk.BooleanVar(value=False)
+        strip_cb = tk.Checkbutton(s2, text="Uploaded knob IS a sprite strip (61 frames)", 
+                                   variable=self.strip_var, bg='#111116', fg='#00ffaa',
+                                   selectcolor='#111116', activebackground='#111116',
+                                   activeforeground='#00ffaa', font=('Consolas', 8),
+                                   command=self.toggle_knob_mode)
+        strip_cb.pack(anchor='w', padx=10, pady=(0, 2))
 
         f_size = tk.Frame(s2, bg='#111116')
         f_size.pack(fill='x', padx=10, pady=2)
@@ -91,6 +103,10 @@ class MerjV8QuadStudio:
         self.canvas.bind("<B1-Motion>", self.drag_active_knob)
         self.render_editor_canvas()
 
+    def toggle_knob_mode(self):
+        self.knob_is_strip = self.strip_var.get()
+        self.render_editor_canvas()
+
     def apply_custom_sizes(self):
         try:
             self.bg_w = int(self.ent_bg_w.get().strip())
@@ -124,27 +140,37 @@ class MerjV8QuadStudio:
             self.canvas.create_text(425, 350, text="[ merj quad engine workspace ]\n\nUpload a background faceplate panel to arrange multiple plugin controls", fill='#333344', font=('Consolas', 11), justify='center')
 
         if self.knob_img:
-            k_aspect = self.knob_img.width / self.knob_img.height
-            if k_aspect > 1.0:
-                kw = self.knob_size
-                kh = int(self.knob_size / k_aspect)
-            else:
-                kh = self.knob_size
-                kw = int(self.knob_size * k_aspect)
-
-            padded_knob = Image.new("RGBA", (self.knob_size, self.knob_size), (0, 0, 0, 0))
-            k_offset_x = (self.knob_size - kw) // 2
-            k_offset_y = (self.knob_size - kh) // 2
-            resized_knob_layer = self.knob_img.resize((kw, kh), Image.Resampling.LANCZOS)
-            padded_knob.paste(resized_knob_layer, (k_offset_x, k_offset_y))
-
-            rot = padded_knob.rotate(-self.test_angle, resample=Image.Resampling.BICUBIC)
             scale_factor_x = 850 / self.bg_w
             scale_factor_y = 680 / self.bg_h
             display_k_size_x = int(self.knob_size * scale_factor_x)
             display_k_size_y = int(self.knob_size * scale_factor_y)
 
-            self.knob_tk = ImageTk.PhotoImage(rot.resize((display_k_size_x, display_k_size_y)))
+            # If knob is a strip, extract the middle frame for preview
+            if self.knob_is_strip:
+                # Assume strip is vertical: width = knob_size, height = knob_size * 61
+                frame_h = self.knob_img.height // 61
+                mid_frame = self.knob_img.crop((0, frame_h * 30, self.knob_img.width, frame_h * 31))
+                # Resize to display size maintaining aspect
+                preview_img = mid_frame.resize((display_k_size_x, display_k_size_y), Image.Resampling.LANCZOS)
+            else:
+                # Single knob - rotate for preview
+                k_aspect = self.knob_img.width / self.knob_img.height
+                if k_aspect > 1.0:
+                    kw = self.knob_size
+                    kh = int(self.knob_size / k_aspect)
+                else:
+                    kh = self.knob_size
+                    kw = int(self.knob_size * k_aspect)
+
+                padded_knob = Image.new("RGBA", (self.knob_size, self.knob_size), (0, 0, 0, 0))
+                k_offset_x = (self.knob_size - kw) // 2
+                k_offset_y = (self.knob_size - kh) // 2
+                resized_knob_layer = self.knob_img.resize((kw, kh), Image.Resampling.LANCZOS)
+                padded_knob.paste(resized_knob_layer, (k_offset_x, k_offset_y))
+                rot = padded_knob.rotate(-self.test_angle, resample=Image.Resampling.BICUBIC)
+                preview_img = rot.resize((display_k_size_x, display_k_size_y), Image.Resampling.LANCZOS)
+
+            self.knob_tk = ImageTk.PhotoImage(preview_img)
 
             rad = self.knob_size // 2
             for i, coord in enumerate(self.knob_coords):
@@ -170,7 +196,13 @@ class MerjV8QuadStudio:
 
     def load_knob_asset(self):
         p = filedialog.askopenfilename(filetypes=[("Images", "*.png")])
-        if p: self.knob_img = Image.open(p); self.render_editor_canvas()
+        if p: 
+            self.knob_img = Image.open(p)
+            # Auto-detect strip: if image is much taller than wide, likely a strip
+            if self.knob_img.height > self.knob_img.width * 2:
+                self.strip_var.set(True)
+                self.knob_is_strip = True
+            self.render_editor_canvas()
 
     def preview_rotation(self, val):
         self.test_angle = float(val); self.render_editor_canvas()
@@ -196,10 +228,8 @@ class MerjV8QuadStudio:
             return
         scale_factor_x = 850 / self.bg_w
         scale_factor_y = 680 / self.bg_h
-        # Convert canvas coordinates back to design coordinates
         new_x = int(event.x / scale_factor_x)
         new_y = int(event.y / scale_factor_y)
-        # Clamp to canvas bounds
         new_x = max(0, min(new_x, self.bg_w))
         new_y = max(0, min(new_y, self.bg_h))
         self.knob_coords[self.active_knob_index] = [new_x, new_y]
@@ -225,24 +255,44 @@ class MerjV8QuadStudio:
             save_p = filedialog.askdirectory()
             if not save_p:
                 return
+
+            # FIX: Proper bundle directory with .vst3 extension
             bundle_dir = os.path.join(save_p, f"{name}.vst3")
             os.makedirs(bundle_dir, exist_ok=True)
 
-            k_aspect = self.knob_img.width / self.knob_img.height
-            if k_aspect > 1.0:
-                kw = self.knob_size
-                kh = int(self.knob_size / k_aspect)
-            else:
-                kh = self.knob_size
-                kw = int(self.knob_size * k_aspect)
-            padded_knob = Image.new("RGBA", (self.knob_size, self.knob_size), (0, 0, 0, 0))
-            padded_knob.paste(self.knob_img.resize((kw, kh), Image.Resampling.LANCZOS), ((self.knob_size-kw)//2, (self.knob_size-kh)//2))
+            # FIX: Use correct bundle_dir (removed the line that overwrote it with save_p)
+            bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
+            res_path = os.path.join(bundle_dir, "Contents", "Resources")
+            os.makedirs(bin_path, exist_ok=True)
+            os.makedirs(res_path, exist_ok=True)
 
-            canvas_strip = Image.new("RGBA", (self.knob_size, self.knob_size * 61), (0, 0, 0, 0))
-            for f in range(61):
-                ang = -135.0 + ((f / 60.0) * 270.0)
-                rot = padded_knob.rotate(-ang, resample=Image.Resampling.BICUBIC)
-                canvas_strip.paste(rot, (0, f * self.knob_size))
+            # FIX: Binary must have .vst3 extension and proper name
+            binary_name = f"{name}.vst3"
+            target_binary = os.path.join(bin_path, binary_name)
+            shutil.copyfile(self.vst_paths[0], target_binary)
+
+            # Process knob image: either use strip as-is or generate from single knob
+            if self.knob_is_strip:
+                # User uploaded a strip - resize to proper dimensions if needed
+                # Expected: width = knob_size, height = knob_size * 61
+                canvas_strip = self.knob_img.resize((self.knob_size, self.knob_size * 61), Image.Resampling.LANCZOS)
+            else:
+                # Generate strip from single knob
+                k_aspect = self.knob_img.width / self.knob_img.height
+                if k_aspect > 1.0:
+                    kw = self.knob_size
+                    kh = int(self.knob_size / k_aspect)
+                else:
+                    kh = self.knob_size
+                    kw = int(self.knob_size * k_aspect)
+                padded_knob = Image.new("RGBA", (self.knob_size, self.knob_size), (0, 0, 0, 0))
+                padded_knob.paste(self.knob_img.resize((kw, kh), Image.Resampling.LANCZOS), ((self.knob_size-kw)//2, (self.knob_size-kh)//2))
+
+                canvas_strip = Image.new("RGBA", (self.knob_size, self.knob_size * 61), (0, 0, 0, 0))
+                for f in range(61):
+                    ang = -135.0 + ((f / 60.0) * 270.0)
+                    rot = padded_knob.rotate(-ang, resample=Image.Resampling.BICUBIC)
+                    canvas_strip.paste(rot, (0, f * self.knob_size))
 
             macro_tags = self.entry_macro.get().strip()
             xml_views = []
@@ -261,14 +311,6 @@ class MerjV8QuadStudio:
     </template>
 </vstgui-ui-description>"""
 
-            bundle_dir = save_p
-            bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
-            res_path = os.path.join(bundle_dir, "Contents", "Resources")
-            os.makedirs(bin_path, exist_ok=True); os.makedirs(res_path, exist_ok=True)
-
-            target_binary = os.path.join(bin_path, os.path.basename(bundle_dir).replace(".vst3", ""))
-            shutil.copyfile(self.vst_paths[0], target_binary)
-
             bg_aspect = self.bg_img.width / self.bg_img.height
             target_aspect = self.bg_w / self.bg_h
             if bg_aspect > target_aspect:
@@ -284,7 +326,6 @@ class MerjV8QuadStudio:
             export_bg.save(os.path.join(res_path, "bg_plate.png"))
             canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
 
-            # FIXED: Forces the layout data to be cloned across ALL common open-source file extensions
             with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
             with open(os.path.join(res_path, "AppWorkspace.xml"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
             with open(os.path.join(res_path, "Interface.xml"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
