@@ -15,8 +15,8 @@ class MerjV8QuadStudio:
         self.knob_img = None
         self.knob_tk = None
         
-        # FIXED: Initialized default visual grid coordinates for the 4 sliders
-        self.knob_coords = [[100, 300], [250, 300], [400, 300], [550, 300]]
+        # Initialized standard functional default layout coordinates
+        self.knob_coords = [[100, 150], [250, 150], [400, 150], [550, 150]]
         self.active_knob_index = -1
         self.test_angle = 0
         self.lbl_statuses = []
@@ -82,7 +82,34 @@ class MerjV8QuadStudio:
             rot = self.knob_img.rotate(-self.test_angle, resample=Image.Resampling.BICUBIC).resize((60, 60))
             self.knob_tk = ImageTk.PhotoImage(rot)
             for i, coord in enumerate(self.knob_coords):
-                if i >= sum(1 for p in self.vst_paths if p or (i = 2 and not self.vst_paths[i]: continue
+                if i >= 2 and not self.vst_paths[i]:
+                    continue
+                self.canvas.create_image(coord[0], coord[1], image=self.knob_tk, tags=f"k_{i}")
+                color = '#00ffaa' if i == self.active_knob_index else '#444455'
+                self.canvas.create_rectangle(coord[0]-30, coord[1]-30, coord[0]+30, coord[1]+30, outline=color, dash=(3, 3))
+
+    def load_vst_binary(self, idx):
+        p = filedialog.askopenfilename(filetypes=[("VST3 Plugin Binaries", "*.vst3")])
+        if p:
+            self.vst_paths[idx] = p
+            self.lbl_statuses[idx].config(text=os.path.basename(p)[:12], fg='#00ffaa')
+            self.render_editor_canvas()
+
+    def load_bg_asset(self):
+        p = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg")])
+        if p: self.bg_img = Image.open(p); self.render_editor_canvas()
+
+    def load_knob_asset(self):
+        p = filedialog.askopenfilename(filetypes=[("Images", "*.png")])
+        if p: self.knob_img = Image.open(p); self.render_editor_canvas()
+
+    def preview_rotation(self, val):
+        self.test_angle = float(val); self.render_editor_canvas()
+
+    def identify_clicked_knob(self, event):
+        self.active_knob_index = -1
+        for i, coord in enumerate(self.knob_coords):
+            if abs(event.x - coord[0]) = 2 and not self.vst_paths[i]: continue
                 xml_views.append(f'<view class="CAnimKnob" origin="{coord[0]-30}, {coord[1]-30}" size="60, 60" resource-names="strip_dial" control-tag="{macro_tags}" height-of-one-image="60"/>')
             
             final_views_payload = "\n\t\t".join(xml_views)
@@ -108,9 +135,9 @@ class MerjV8QuadStudio:
             with open(target_binary, 'rb') as f: data = f.read()
             for sig in [b"PeakEater", b"Template", b"BasePlug"]:
                 if sig in data: data = data.replace(sig, name.encode('utf-8'))
-            with open(target_binary, 'wb') as f: f.write(data)
+            with open(target_binary, 'wb') as f: data = f.write(data)
 
-            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\\nSaved to: {bundle_dir}")
+            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
         except Exception as e:
             messagebox.showerror("merj Fault", f"System compilation thread crashed: {str(e)}")
 
