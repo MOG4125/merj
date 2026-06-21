@@ -8,18 +8,18 @@ class MerjV8QuadStudio:
         self.root.title("merj v8.0 // Quad Engine Visual VST Studio")
         self.root.geometry("1200x700")
         self.root.configure(bg='#08080c')
-        
+
         self.vst_paths = ["", "", "", ""]
         self.bg_img = None
         self.bg_tk = None
         self.knob_img = None
         self.knob_tk = None
-        
+
         # UI Options Controls
         self.bg_w = 800
         self.bg_h = 600
         self.knob_size = 60
-        
+
         # Initialized functional default layout coordinates
         self.knob_coords = [[100, 100], [200, 100], [300, 100], [400, 100]]
         self.active_knob_index = -1
@@ -111,13 +111,13 @@ class MerjV8QuadStudio:
             else:
                 scaled_h = self.bg_h
                 scaled_w = int(self.bg_h * bg_aspect)
-            
+
             padded_bg = Image.new("RGBA", (self.bg_w, self.bg_h), (0, 0, 0, 255))
             offset_x = (self.bg_w - scaled_w) // 2
             offset_y = (self.bg_h - scaled_h) // 2
             resized_bg_layer = self.bg_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
             padded_bg.paste(resized_bg_layer, (offset_x, offset_y))
-            
+
             self.bg_tk = ImageTk.PhotoImage(padded_bg.resize((850, 680)))
             self.canvas.create_image(0, 0, anchor='nw', image=self.bg_tk)
         else:
@@ -131,7 +131,7 @@ class MerjV8QuadStudio:
             else:
                 kh = self.knob_size
                 kw = int(self.knob_size * k_aspect)
-                
+
             padded_knob = Image.new("RGBA", (self.knob_size, self.knob_size), (0, 0, 0, 0))
             k_offset_x = (self.knob_size - kw) // 2
             k_offset_y = (self.knob_size - kh) // 2
@@ -143,9 +143,9 @@ class MerjV8QuadStudio:
             scale_factor_y = 680 / self.bg_h
             display_k_size_x = int(self.knob_size * scale_factor_x)
             display_k_size_y = int(self.knob_size * scale_factor_y)
-            
+
             self.knob_tk = ImageTk.PhotoImage(rot.resize((display_k_size_x, display_k_size_y)))
-            
+
             rad = self.knob_size // 2
             for i, coord in enumerate(self.knob_coords):
                 if i >= 2 and not self.vst_paths[i]: continue
@@ -174,6 +174,7 @@ class MerjV8QuadStudio:
 
     def preview_rotation(self, val):
         self.test_angle = float(val); self.render_editor_canvas()
+
     def identify_clicked_knob(self, event):
         self.active_knob_index = -1
         scale_factor_x = 850 / self.bg_w
@@ -185,7 +186,50 @@ class MerjV8QuadStudio:
             cy = int(coord[1] * scale_factor_y)
             rx = int(rad * scale_factor_x)
             ry = int(rad * scale_factor_y)
-            if abs(event.x - cx)  1.0:
+            if abs(event.x - cx) <= rx and abs(event.y - cy) <= ry:
+                self.active_knob_index = i
+                break
+        self.render_editor_canvas()
+
+    def drag_active_knob(self, event):
+        if self.active_knob_index == -1:
+            return
+        scale_factor_x = 850 / self.bg_w
+        scale_factor_y = 680 / self.bg_h
+        # Convert canvas coordinates back to design coordinates
+        new_x = int(event.x / scale_factor_x)
+        new_y = int(event.y / scale_factor_y)
+        # Clamp to canvas bounds
+        new_x = max(0, min(new_x, self.bg_w))
+        new_y = max(0, min(new_y, self.bg_h))
+        self.knob_coords[self.active_knob_index] = [new_x, new_y]
+        self.render_editor_canvas()
+
+    def build_vst_package(self):
+        try:
+            if not self.vst_paths[0]:
+                messagebox.showerror("merj Fault", "Base VST A is required.")
+                return
+            if not self.bg_img:
+                messagebox.showerror("merj Fault", "Background panel is required.")
+                return
+            if not self.knob_img:
+                messagebox.showerror("merj Fault", "Knob sticker image is required.")
+                return
+
+            name = self.entry_name.get().strip().upper()
+            if not name or len(name) != 9:
+                messagebox.showerror("merj Fault", "Product name must be exactly 9 letters.")
+                return
+
+            save_p = filedialog.askdirectory()
+            if not save_p:
+                return
+            bundle_dir = os.path.join(save_p, f"{name}.vst3")
+            os.makedirs(bundle_dir, exist_ok=True)
+
+            k_aspect = self.knob_img.width / self.knob_img.height
+            if k_aspect > 1.0:
                 kw = self.knob_size
                 kh = int(self.knob_size / k_aspect)
             else:
@@ -208,7 +252,7 @@ class MerjV8QuadStudio:
                 ox = coord[0] - rad
                 oy = coord[1] - rad
                 xml_views.append(f'<view class="CAnimKnob" origin="{ox}, {oy}" size="{self.knob_size}, {self.knob_size}" resource-names="strip_dial" control-tag="{macro_tags}" height-of-one-image="{self.knob_size}"/>')
-            
+
             final_views_payload = "\n\t\t".join(xml_views)
             uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <vstgui-ui-description version="1">
@@ -233,13 +277,13 @@ class MerjV8QuadStudio:
             else:
                 scaled_h = self.bg_h
                 scaled_w = int(self.bg_h * bg_aspect)
-            
+
             export_bg = Image.new("RGBA", (self.bg_w, self.bg_h), (0, 0, 0, 255))
             export_bg.paste(self.bg_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS), ((self.bg_w-scaled_w)//2, (self.bg_h-scaled_h)//2))
-            
+
             export_bg.save(os.path.join(res_path, "bg_plate.png"))
             canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
-            
+
             # FIXED: Forces the layout data to be cloned across ALL common open-source file extensions
             with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
             with open(os.path.join(res_path, "AppWorkspace.xml"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
