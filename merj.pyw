@@ -1,174 +1,119 @@
-import os
-import re
-import math
-import shutil
-import tkinter as tk
+import os, re, math, shutil, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk
 
-class MerjV7StudioApp:
+class MerjV8QuadStudio:
     def __init__(self, root):
         self.root = root
-        self.root.title("merj v7.0 // Unified No-Code VST Studio")
-        self.root.geometry("1100x650")
+        self.root.title("merj v8.0 // Quad Engine Visual VST Studio")
+        self.root.geometry("1200x700")
         self.root.configure(bg='#08080c')
-
-        self.base_plugin_path = ""
-        self.bg_image_raw = None
-        self.bg_image_tk = None
-        self.knob_image_raw = None
-        self.active_knob_tk = None
         
-        self.knob_x = 400
-        self.knob_y = 300
-        self.knob_angle_test = 0
+        self.vst_paths = ["", "", "", ""]
+        self.bg_img = None
+        self.bg_tk = None
+        self.knob_img = None
+        self.knob_tk = None
         
-        self.setup_mainframe_layout()
+        self.knob_coords = [[150, 200], [300, 200], [450, 200], [600, 200]]
+        self.active_knob_index = -1
+        self.test_angle = 0
+        self.lbl_statuses = []
 
-    def setup_mainframe_layout(self):
-        self.left_panel = tk.Frame(self.root, bg='#111116', width=320, bd=0)
-        self.left_panel.pack(side='left', fill='y', padx=0, pady=0)
+        self.setup_ui_layout()
+
+    def setup_ui_layout(self):
+        self.left_panel = tk.Frame(self.root, bg='#111116', width=350)
+        self.left_panel.pack(side='left', fill='y')
         self.left_panel.pack_propagate(False)
 
-        tk.Label(self.left_panel, text="[ merj v7.0 // STUDIO ]", bg='#111116', fg='#00ffaa', font=('Consolas', 12, 'bold')).pack(pady=15)
+        tk.Label(self.left_panel, text="[ merj v8.0 // QUAD ENGINE ]", bg='#111116', fg='#00ffaa', font=('Consolas', 11, 'bold')).pack(pady=10)
 
-        s1_frame = tk.LabelFrame(self.left_panel, text="1. Core Plugin Base Engine", bg='#111116', fg='#888899', font=('Consolas', 9), padx=10, pady=5)
-        s1_frame.pack(fill='x', padx=15, pady=5)
-        ttk.Button(s1_frame, text="LOAD INPUT VST3", command=self.load_base_plugin).pack(fill='x', pady=4)
-        self.lbl_vst_status = tk.Label(s1_frame, text="unlinked //", bg='#111116', fg='#555566', font=('Consolas', 8, 'italic'))
-        self.lbl_vst_status.pack(anchor='w')
+        s1 = tk.LabelFrame(self.left_panel, text="1. Core Base Plugins Inputs", bg='#111116', fg='#888899', font=('Consolas', 8))
+        s1.pack(fill='x', padx=10, pady=4)
+        for i, char in enumerate(['A', 'B', 'C', 'D']):
+            f = tk.Frame(s1, bg='#111116')
+            f.pack(fill='x', padx=5, pady=2)
+            ttk.Button(f, text=f"LOAD VST {char}", command=lambda idx=i: self.load_vst_binary(idx)).pack(side='left', fill='x', expand=True)
+            lbl = tk.Label(f, text="unlinked //" if i < 2 else "optional //", bg='#111116', fg='#555566', font=('Consolas', 8, 'italic'))
+            lbl.pack(side='left', padx=5)
+            self.lbl_statuses.append(lbl)
 
-        s2_frame = tk.LabelFrame(self.left_panel, text="2. UI Art Workspace Layers", bg='#111116', fg='#888899', font=('Consolas', 9), padx=10, pady=5)
-        s2_frame.pack(fill='x', padx=15, pady=5)
-        ttk.Button(s2_frame, text="UPLOAD BACKDROP PANEL", command=self.load_background_texture).pack(fill='x', pady=2)
-        ttk.Button(s2_frame, text="UPLOAD UNIQUE KNOB DESIGN", command=self.load_knob_design).pack(fill='x', pady=2)
+        s2 = tk.LabelFrame(self.left_panel, text="2. UI Graphic Canvas Assets", bg='#111116', fg='#888899', font=('Consolas', 8))
+        s2.pack(fill='x', padx=10, pady=4)
+        ttk.Button(s2, text="LOAD BACKDROP PANEL", command=self.load_bg_asset).pack(fill='x', padx=10, pady=2)
+        ttk.Button(s2, text="LOAD UNIQUE KNOB STICKER", command=self.load_knob_asset).pack(fill='x', padx=10, pady=2)
 
-        s3_frame = tk.LabelFrame(self.left_panel, text="3. Automation Macro Link Matrix", bg='#111116', fg='#888899', font=('Consolas', 9), padx=10, pady=5)
-        s3_frame.pack(fill='x', padx=15, pady=5)
-        self.entry_macros = tk.Entry(s3_frame, bg='#08080c', fg='#00ffaa', font=('Consolas', 10), insertbackground='white', bd=1, relief='solid')
-        self.entry_macros.insert(0, "0,1,2")
-        self.entry_macros.pack(fill='x', ipady=2, pady=2)
+        s3 = tk.LabelFrame(self.left_panel, text="3. Macro Parameter Maps (e.g. 0,1,2)", bg='#111116', fg='#888899', font=('Consolas', 8))
+        s3.pack(fill='x', padx=10, pady=4)
+        self.entry_macro = tk.Entry(s3, bg='#08080c', fg='#00ffaa', font=('Consolas', 10), insertbackground='white', bd=1, relief='solid')
+        self.entry_macro.insert(0, "0,1,2")
+        self.entry_macro.pack(fill='x', ipady=2, padx=5, pady=2)
 
-        s4_frame = tk.LabelFrame(self.left_panel, text="4. Brand Title Config (9 Letters)", bg='#111116', fg='#888899', font=('Consolas', 9), padx=10, pady=5)
-        s4_frame.pack(fill='x', padx=15, pady=5)
-        self.entry_brand = tk.Entry(s4_frame, bg='#08080c', fg='#00ffaa', font=('Consolas', 10), insertbackground='white', bd=1, relief='solid')
-        self.entry_brand.insert(0, "DEVILSMASH")
-        self.entry_brand.pack(fill='x', ipady=2, pady=2)
+        s4 = tk.LabelFrame(self.left_panel, text="4. Product Name String (9 Letters)", bg='#111116', fg='#888899', font=('Consolas', 8))
+        s4.pack(fill='x', padx=10, pady=4)
+        self.entry_name = tk.Entry(s4, bg='#08080c', fg='#00ffaa', font=('Consolas', 10), insertbackground='white', bd=1, relief='solid')
+        self.entry_name.insert(0, "HELLCRUSH")
+        self.entry_name.pack(fill='x', ipady=2, padx=5, pady=2)
 
-        s5_frame = tk.LabelFrame(self.left_panel, text="Art Animation Test Rotation", bg='#111116', fg='#ffffff', font=('Consolas', 9), padx=10, pady=5)
-        s5_frame.pack(fill='x', padx=15, pady=5)
-        self.test_slider = tk.Scale(s5_frame, from_=-135, to=135, orient='horizontal', bg='#111116', fg='#00ffaa', highlightthickness=0, command=self.rotate_live_canvas_knob)
-        self.test_slider.pack(fill='x')
+        s5 = tk.LabelFrame(self.left_panel, text="Live Animation Rotation Preview", bg='#111116', fg='#ffffff', font=('Consolas', 8))
+        s5.pack(fill='x', padx=10, pady=4)
+        self.rot_scale = tk.Scale(s5, from_=-135, to=135, orient='horizontal', bg='#111116', fg='#00ffaa', highlightthickness=0, command=self.preview_rotation)
+        self.rot_scale.pack(fill='x')
 
-        tk.Button(self.left_panel, text="⚡ GENERATE STANDALONE VST3", bg='#ffffff', fg='#000000', font=('Consolas', 10, 'bold'), command=self.compile_and_export_vst3, borderwidth=0).pack(fill='x', padx=15, ipady=10, pady=20)
+        tk.Button(self.left_panel, text="⚡ MERJ & EXPORT STANDALONE VST3", bg='#ffffff', fg='#000000', font=('Consolas', 10, 'bold'), command=self.build_vst_package, borderwidth=0).pack(fill='x', padx=10, ipady=10, pady=15)
 
-        self.work_canvas = tk.Canvas(self.root, bg='#050508', highlightthickness=0)
-        self.work_canvas.pack(side='right', expand=True, fill='both')
-        self.work_canvas.bind("<B1-Motion>", self.drag_knob_object_on_grid)
-        self.display_editor_grid()
+        self.canvas = tk.Canvas(self.root, bg='#050508', highlightthickness=0)
+        self.canvas.pack(side='right', expand=True, fill='both')
+        self.canvas.bind("<Button-1>", self.identify_clicked_knob)
+        self.canvas.bind("<B1-Motion>", self.drag_active_knob)
+        self.render_editor_canvas()
 
-    def display_editor_grid(self):
-        self.work_canvas.delete("all")
-        if self.bg_image_raw:
-            self.bg_image_tk = ImageTk.PhotoImage(self.bg_image_raw.resize((780, 650)))
-            self.work_canvas.create_image(0, 0, anchor='nw', image=self.bg_image_tk)
+    def render_editor_canvas(self):
+        self.canvas.delete("all")
+        if self.bg_img:
+            self.bg_tk = ImageTk.PhotoImage(self.bg_img.resize((850, 700)))
+            self.canvas.create_image(0, 0, anchor='nw', image=self.bg_tk)
         else:
-            self.work_canvas.create_text(390, 325, text="[ merj visual workspace panel ]\n\nUpload a background canvas to begin interface layout arrangements", fill='#333344', font=('Consolas', 11), justify='center')
+            self.canvas.create_text(425, 350, text="[ merj quad engine workspace ]\n\nUpload a background faceplate panel to arrange multiple plugin controls", fill='#333344', font=('Consolas', 11), justify='center')
 
-        if self.knob_image_raw:
-            rotated_img = self.knob_image_raw.rotate(-self.knob_angle_test, resample=Image.Resampling.BICUBIC)
-            self.active_knob_tk = ImageTk.PhotoImage(rotated_img.resize((70, 70)))
-            self.work_canvas.create_image(self.knob_x, self.knob_y, image=self.active_knob_tk, tags="knob_node")
-            self.work_canvas.create_rectangle(self.knob_x-35, self.knob_y-35, self.knob_x+35, self.knob_y+35, outline='#00ffaa', dash=(4, 4), tags="knob_node")
-
-    def load_base_plugin(self):
-        path = filedialog.askopenfilename(filetypes=[("VST3 Plugin Binaries", "*.vst3")])
-        if path:
-            self.base_plugin_path = path
-            self.lbl_vst_status.config(text=f"linked // {os.path.basename(path)}", fg='#00ffaa')
-
-    def load_background_texture(self):
-        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg")])
-        if path:
-            self.bg_image_raw = Image.open(path)
-            self.display_editor_grid()
-
-    def load_knob_design(self):
-        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png")])
-        if path:
-            self.knob_image_raw = Image.open(path)
-            self.display_editor_grid()
-
-    def rotate_live_canvas_knob(self, value):
-        self.knob_angle_test = float(value)
-        self.display_editor_grid()
-
-    def drag_knob_object_on_grid(self, event):
-        if 35 < event.x < 745 and 35 < event.y < 615:
-            self.knob_x = event.x
-            self.knob_y = event.y
-            self.display_editor_grid()
-    def compile_and_export_vst3(self):
-        if not self.base_plugin_path or not self.bg_image_raw or not self.knob_image_raw:
-            messagebox.showerror("merj Error", "Compilation matrix halted. Incomplete development files.")
-            return
-
-        vst_brand_name = self.entry_brand.get().strip()
-        if len(vst_brand_name) != 9:
-            messagebox.showerror("merj Error", "The plugin name must be exactly 9 letters long.")
-            return
-
-        save_target = filedialog.asksaveasfilename(defaultextension=".vst3", filetypes=[("VST3 Plugin Bundle", "*.vst3")])
-        if not save_target: return
-
-        try:
-            filmstrip_canvas = Image.new("RGBA", (70, 70 * 61), (0, 0, 0, 0))
-            for frame in range(61):
-                fraction = frame / 60.0
-                current_angle = -135.0 + (fraction * 270.0)
-                frame_rotated = self.knob_image_raw.rotate(-current_angle, resample=Image.Resampling.BICUBIC).resize((70, 70))
-                filmstrip_canvas.paste(frame_rotated, (0, frame * 70))
-
-            macro_links = self.entry_macros.get().strip()
-            custom_uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
+        if self.knob_img:
+            rot = self.knob_img.rotate(-self.test_angle, resample=Image.Resampling.BICUBIC).resize((60, 60))
+            self.knob_tk = ImageTk.PhotoImage(rot)
+            for i, coord in enumerate(self.knob_coords):
+                if i >= sum(1 for p in self.vst_paths if p or (i = 2 and not self.vst_paths[i]: continue
+                xml_views.append(f'<view class="CAnimKnob" origin="{coord[0]-30}, {coord[1]-30}" size="60, 60" resource-names="strip_dial" control-tag="{macro_tags}" height-of-one-image="60"/>')
+            
+            final_views_payload = "\n\t\t".join(xml_views)
+            uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <vstgui-ui-description version="1">
-    <template name="view" size="800, 600" bitmap="background_plate">
-        <view class="CAnimKnob" origin="{self.knob_x - 35}, {self.knob_y - 35}" size="70, 70" resource-names="generated_dial_strip" control-tag="{macro_links}" height-of-one-image="70"/>
+    <template name="view" size="800, 600" bitmap="bg_plate">
+        {final_views_payload}
     </template>
 </vstgui-ui-description>"""
 
-            bundle_directory = save_target if save_target.endswith(".vst3") else save_target + ".vst3"
-            bin_output_path = os.path.join(bundle_directory, "Contents", "x86_64-win")
-            res_output_path = os.path.join(bundle_directory, "Contents", "Resources")
-            os.makedirs(bin_output_path, exist_ok=True)
-            os.makedirs(res_output_path, exist_ok=True)
+            bundle_dir = save_p if save_p.endswith(".vst3") else save_p + ".vst3"
+            bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
+            res_path = os.path.join(bundle_dir, "Contents", "Resources")
+            os.makedirs(bin_path, exist_ok=True); os.makedirs(res_path, exist_ok=True)
 
-            final_bin_file = os.path.join(bin_output_path, os.path.basename(bundle_directory).replace(".vst3", ""))
-            shutil.copyfile(self.base_plugin_path, final_bin_file)
+            target_binary = os.path.join(bin_path, os.path.basename(bundle_dir).replace(".vst3", ""))
+            shutil.copyfile(self.vst_paths[0], target_binary)
 
-            self.bg_image_raw.resize((800, 600)).save(os.path.join(res_output_path, "background_plate.png"))
-            filmstrip_canvas.save(os.path.join(res_output_path, "generated_dial_strip.png"))
-            
-            with open(os.path.join(res_output_path, "plugin.uidesc"), 'w', encoding='utf-8') as f:
-                f.write(custom_uidesc_payload)
+            self.bg_img.resize((800, 600)).save(os.path.join(res_path, "bg_plate.png"))
+            canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
+            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f: f.write(uidesc_payload)
 
-            with open(final_bin_file, 'rb') as f:
-                raw_binary_stream = f.read()
+            with open(target_binary, 'rb') as f: data = f.read()
+            for sig in [b"PeakEater", b"Template", b"BasePlug"]:
+                if sig in data: data = data.replace(sig, name.encode('utf-8'))
+            with open(target_binary, 'wb') as f: f.write(data)
 
-            original_signatures = [b"PeakEater", b"Template", b"BasePlug"]
-            for signature in original_signatures:
-                if signature in raw_binary_stream:
-                    raw_binary_stream = raw_binary_stream.replace(signature, vst_brand_name.encode('utf-8'))
-
-            with open(final_bin_file, 'wb') as f:
-                f.write(raw_binary_stream)
-
-            messagebox.showinfo("merj Studio Complete", "Success! Plugin successfully compiled and saved.")
-
+            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
         except Exception as e:
-            messagebox.showerror("merj Mainframe Fault", f"An unexpected compile error occurred: {str(e)}")
+            messagebox.showerror("merj Fault", f"System compilation thread crashed: {str(e)}")
 
 if __name__ == "__main__":
     window = tk.Tk()
-    app = MerjV7StudioApp(window)
+    app = MerjV8QuadStudio(window)
     window.mainloop()
