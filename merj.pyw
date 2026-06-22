@@ -1,4 +1,4 @@
-import os, re, math, shutil, json, tkinter as tk
+import os, re, math, shutil, json, struct, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
@@ -15,15 +15,11 @@ class MerjV8QuadStudio:
         self.knob_img = None
         self.knob_tk = None
 
-        # UI Options Controls
         self.bg_w = 800
         self.bg_h = 600
         self.knob_size = 60
-
-        # Knob mode: False = single knob (auto-generate strip), True = uploaded image IS the strip
         self.knob_is_strip = False
 
-        # Initialized functional default layout coordinates
         self.knob_coords = [[100, 100], [200, 100], [300, 100], [400, 100]]
         self.active_knob_index = -1
         self.test_angle = 0
@@ -53,7 +49,6 @@ class MerjV8QuadStudio:
         ttk.Button(s2, text="LOAD BACKDROP PANEL", command=self.load_bg_asset).pack(fill='x', padx=10, pady=2)
         ttk.Button(s2, text="LOAD KNOB IMAGE", command=self.load_knob_asset).pack(fill='x', padx=10, pady=2)
 
-        # Knob mode toggle
         self.strip_var = tk.BooleanVar(value=False)
         strip_cb = tk.Checkbutton(s2, text="Uploaded knob IS a sprite strip (61 frames)", 
                                    variable=self.strip_var, bg='#111116', fg='#00ffaa',
@@ -95,11 +90,15 @@ class MerjV8QuadStudio:
         self.rot_scale = tk.Scale(s5, from_=-135, to=135, orient='horizontal', bg='#111116', fg='#00ffaa', highlightthickness=0, command=self.preview_rotation)
         self.rot_scale.pack(fill='x')
 
-        # Delete knob button
         del_frame = tk.Frame(self.left_panel, bg='#111116')
         del_frame.pack(fill='x', padx=10, pady=(0, 5))
         tk.Button(del_frame, text="🗑 DELETE SELECTED KNOB", bg='#ff3333', fg='#ffffff', 
                   font=('Consolas', 9, 'bold'), command=self.delete_selected_knob, borderwidth=0).pack(fill='x', ipady=6)
+
+        add_frame = tk.Frame(self.left_panel, bg='#111116')
+        add_frame.pack(fill='x', padx=10, pady=(0, 5))
+        tk.Button(add_frame, text="➕ ADD KNOB", bg='#00aa66', fg='#ffffff', 
+                  font=('Consolas', 9, 'bold'), command=self.add_knob, borderwidth=0).pack(fill='x', ipady=6)
 
         tk.Button(self.left_panel, text="⚡ MERJ & EXPORT STANDALONE VST3", bg='#ffffff', fg='#000000', font=('Consolas', 10, 'bold'), command=self.build_vst_package, borderwidth=0).pack(fill='x', padx=10, ipady=10, pady=15)
 
@@ -107,7 +106,6 @@ class MerjV8QuadStudio:
         self.canvas.pack(side='right', expand=True, fill='both')
         self.canvas.bind("<Button-1>", self.identify_clicked_knob)
         self.canvas.bind("<B1-Motion>", self.drag_active_knob)
-        # Bind Delete key to delete selected knob
         self.root.bind("<Delete>", lambda e: self.delete_selected_knob())
         self.render_editor_canvas()
 
@@ -115,16 +113,17 @@ class MerjV8QuadStudio:
         self.knob_is_strip = self.strip_var.get()
         self.render_editor_canvas()
 
+    def add_knob(self):
+        self.knob_coords.append([self.bg_w // 2, self.bg_h // 2])
+        self.active_knob_index = len(self.knob_coords) - 1
+        self.render_editor_canvas()
+
     def delete_selected_knob(self):
-        """Remove the currently selected knob from the layout."""
         if self.active_knob_index == -1:
             messagebox.showinfo("merj", "No knob selected. Click a knob first, then press Delete or click the delete button.")
             return
-        # Remove the knob coordinate
-        del self.knob_coords[self.active_knob_index]
-        # Also remove the corresponding VST path if it exists (shift remaining)
-        # But keep the VST paths array aligned with indices - actually we should
-        # just remove the knob from display, not the VST slot
+        if self.active_knob_index < len(self.knob_coords):
+            del self.knob_coords[self.active_knob_index]
         self.active_knob_index = -1
         self.render_editor_canvas()
 
@@ -166,15 +165,11 @@ class MerjV8QuadStudio:
             display_k_size_x = int(self.knob_size * scale_factor_x)
             display_k_size_y = int(self.knob_size * scale_factor_y)
 
-            # If knob is a strip, extract the middle frame for preview
             if self.knob_is_strip:
-                # Assume strip is vertical: width = knob_size, height = knob_size * 61
                 frame_h = self.knob_img.height // 61
                 mid_frame = self.knob_img.crop((0, frame_h * 30, self.knob_img.width, frame_h * 31))
-                # Resize to display size maintaining aspect
                 preview_img = mid_frame.resize((display_k_size_x, display_k_size_y), Image.Resampling.LANCZOS)
             else:
-                # Single knob - rotate for preview
                 k_aspect = self.knob_img.width / self.knob_img.height
                 if k_aspect > 1.0:
                     kw = self.knob_size
@@ -208,7 +203,7 @@ class MerjV8QuadStudio:
                 self.canvas.create_rectangle(cx-rx, cy-ry, cx+rx, cy+ry, outline=color, dash=(3, 3))
 
     def load_vst_binary(self, idx):
-        p = filedialog.askopenfilename(filetypes=[("VST3 Plugin Binaries", "*.vst3")])
+        p = filedialog.askopenfilename(filetypes=[("VST3 Plugin", "*.vst3")])
         if p:
             self.vst_paths[idx] = p
             self.lbl_statuses[idx].config(text=os.path.basename(p)[:12], fg='#00ffaa')
@@ -222,7 +217,6 @@ class MerjV8QuadStudio:
         p = filedialog.askopenfilename(filetypes=[("Images", "*.png")])
         if p: 
             self.knob_img = Image.open(p)
-            # Auto-detect strip: if image is much taller than wide, likely a strip
             if self.knob_img.height > self.knob_img.width * 2:
                 self.strip_var.set(True)
                 self.knob_is_strip = True
@@ -262,6 +256,58 @@ class MerjV8QuadStudio:
         self.knob_coords[self.active_knob_index] = [new_x, new_y]
         self.render_editor_canvas()
 
+    def is_vst3_bundle(self, path):
+        return os.path.isdir(path) and os.path.exists(os.path.join(path, "Contents"))
+
+    def get_binary_from_bundle(self, bundle_path):
+        if not os.path.isdir(bundle_path):
+            return bundle_path
+        arch_paths = [
+            os.path.join(bundle_path, "Contents", "x86_64-win"),
+            os.path.join(bundle_path, "Contents", "x86-win"),
+            os.path.join(bundle_path, "Contents", "arm64-win"),
+            os.path.join(bundle_path, "Contents", "MacOS"),
+        ]
+        for arch_dir in arch_paths:
+            if os.path.exists(arch_dir):
+                for f in os.listdir(arch_dir):
+                    if f.endswith('.vst3') or f.endswith('.so') or '.' not in f:
+                        return os.path.join(arch_dir, f)
+        return None
+
+    def copy_bundle_resources(self, src_bundle, dst_res_path):
+        src_res = os.path.join(src_bundle, "Contents", "Resources")
+        if os.path.exists(src_res):
+            for item in os.listdir(src_res):
+                src_item = os.path.join(src_res, item)
+                dst_item = os.path.join(dst_res_path, item)
+                if os.path.isfile(src_item):
+                    shutil.copy2(src_item, dst_item)
+                elif os.path.isdir(src_item):
+                    if os.path.exists(dst_item):
+                        shutil.rmtree(dst_item)
+                    shutil.copytree(src_item, dst_item)
+
+    def copy_child_plugins(self, bundle_dir):
+        """Copy child plugin binaries into the bundle for the template to load."""
+        child_dir = os.path.join(bundle_dir, "Contents", "Resources", "Plugins")
+        os.makedirs(child_dir, exist_ok=True)
+        copied = []
+        for i, path in enumerate(self.vst_paths):
+            if not path or i == 0:
+                continue
+            if self.is_vst3_bundle(path):
+                src_bin = self.get_binary_from_bundle(path)
+                if src_bin:
+                    dst_name = f"Plugin{chr(65+i)}.vst3"
+                    shutil.copy2(src_bin, os.path.join(child_dir, dst_name))
+                    copied.append(dst_name)
+            else:
+                dst_name = f"Plugin{chr(65+i)}.vst3"
+                shutil.copy2(path, os.path.join(child_dir, dst_name))
+                copied.append(dst_name)
+        return copied
+
     def build_vst_package(self):
         try:
             if not self.vst_paths[0]:
@@ -279,33 +325,53 @@ class MerjV8QuadStudio:
                 messagebox.showerror("merj Fault", "Product name must be exactly 9 letters.")
                 return
 
+            base_path = self.vst_paths[0]
+            is_bundle = self.is_vst3_bundle(base_path)
+
+            if not is_bundle:
+                result = messagebox.askyesno(
+                    "merj Warning",
+                    f"The selected base plugin is a single .vst3 file (deprecated format).\n\n"
+                    f"For best results, use a VST3 BUNDLE folder (with Contents/Resources/).\n\n"
+                    f"Continue anyway?"
+                )
+                if not result:
+                    return
+
             save_p = filedialog.askdirectory()
             if not save_p:
                 return
 
-            # FIX: Proper bundle directory with .vst3 extension
             bundle_dir = os.path.join(save_p, f"{name}.vst3")
             os.makedirs(bundle_dir, exist_ok=True)
 
-            # FIX: Use correct bundle_dir consistently
             bin_path = os.path.join(bundle_dir, "Contents", "x86_64-win")
             res_path = os.path.join(bundle_dir, "Contents", "Resources")
             os.makedirs(bin_path, exist_ok=True)
             os.makedirs(res_path, exist_ok=True)
 
-            # FIX: Binary must have .vst3 extension AND match bundle name
-            # Per VST3 spec: "The folder (bundle) and the DLL (.vst3) file must have the same name!"
+            # Copy original resources if base is a bundle
+            if is_bundle:
+                self.copy_bundle_resources(base_path, res_path)
+                src_binary = self.get_binary_from_bundle(base_path)
+            else:
+                src_binary = base_path
+
+            if not src_binary or not os.path.exists(src_binary):
+                messagebox.showerror("merj Fault", "Could not find binary in base plugin.")
+                return
+
+            # Copy child plugins B, C, D into bundle
+            child_plugins = self.copy_child_plugins(bundle_dir)
+
             binary_name = f"{name}.vst3"
             target_binary = os.path.join(bin_path, binary_name)
-            shutil.copyfile(self.vst_paths[0], target_binary)
+            shutil.copyfile(src_binary, target_binary)
 
-            # Process knob image: either use strip as-is or generate from single knob
+            # Process knob image
             if self.knob_is_strip:
-                # User uploaded a strip - resize to proper dimensions if needed
-                # Expected: width = knob_size, height = knob_size * 61
                 canvas_strip = self.knob_img.resize((self.knob_size, self.knob_size * 61), Image.Resampling.LANCZOS)
             else:
-                # Generate strip from single knob
                 k_aspect = self.knob_img.width / self.knob_img.height
                 if k_aspect > 1.0:
                     kw = self.knob_size
@@ -322,7 +388,7 @@ class MerjV8QuadStudio:
                     rot = padded_knob.rotate(-ang, resample=Image.Resampling.BICUBIC)
                     canvas_strip.paste(rot, (0, f * self.knob_size))
 
-            # Build proper VSTGUI XML with bitmaps section
+            # Build knob XML for VSTGUI-style config
             macro_tags = self.entry_macro.get().strip()
             xml_views = []
             rad = self.knob_size // 2
@@ -337,7 +403,6 @@ class MerjV8QuadStudio:
 
             final_views_payload = "\n\t\t".join(xml_views)
 
-            # FIX: Proper VSTGUI uidesc with bitmaps section for background and knob strip
             uidesc_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <vstgui-ui-description version="1">
     <bitmaps>
@@ -349,8 +414,133 @@ class MerjV8QuadStudio:
     </template>
 </vstgui-ui-description>"""
 
-            # FIX: Also create moduleinfo.json for proper VST3 bundle discovery
-            # Generate a simple moduleinfo.json
+            # CRITICAL: Write comprehensive config with ALL data the template needs
+            # This includes plugin paths, knob coordinates, dimensions, etc.
+            merj_config = {
+                "product_name": name,
+                "version": "1.0.0",
+                "ui": {
+                    "width": self.bg_w,
+                    "height": self.bg_h,
+                    "background": "bg_plate.png",
+                    "knob_strip": "strip_dial.png",
+                    "knob_size": self.knob_size,
+                    "knob_count": len(self.knob_coords),
+                    "knobs": [
+                        {
+                            "index": i,
+                            "x": coord[0],
+                            "y": coord[1],
+                            "plugin_slot": i,
+                            "control_tag": macro_tags
+                        }
+                        for i, coord in enumerate(self.knob_coords)
+                    ]
+                },
+                "plugins": {
+                    "A": {
+                        "path": f"Contents/x86_64-win/{binary_name}",
+                        "type": "base",
+                        "enabled": True
+                    },
+                    "B": {
+                        "path": f"Contents/Resources/Plugins/PluginB.vst3" if self.vst_paths[1] else None,
+                        "type": "child",
+                        "enabled": bool(self.vst_paths[1])
+                    },
+                    "C": {
+                        "path": f"Contents/Resources/Plugins/PluginC.vst3" if self.vst_paths[2] else None,
+                        "type": "child",
+                        "enabled": bool(self.vst_paths[2])
+                    },
+                    "D": {
+                        "path": f"Contents/Resources/Plugins/PluginD.vst3" if self.vst_paths[3] else None,
+                        "type": "child",
+                        "enabled": bool(self.vst_paths[3])
+                    }
+                }
+            }
+
+            # Save config in multiple formats for maximum compatibility
+            # JSON format
+            with open(os.path.join(res_path, "merj.config.json"), 'w', encoding='utf-8') as f:
+                json.dump(merj_config, f, indent=2)
+
+            # XML format (VSTGUI style)
+            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+            with open(os.path.join(res_path, f"{name.lower()}.uidesc"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+            with open(os.path.join(res_path, "AppWorkspace.xml"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+            with open(os.path.join(res_path, "Interface.xml"), 'w', encoding='utf-8') as f:
+                f.write(uidesc_payload)
+
+            # Save images
+            bg_aspect = self.bg_img.width / self.bg_img.height
+            target_aspect = self.bg_w / self.bg_h
+            if bg_aspect > target_aspect:
+                scaled_w = self.bg_w
+                scaled_h = int(self.bg_w / bg_aspect)
+            else:
+                scaled_h = self.bg_h
+                scaled_w = int(self.bg_h * bg_aspect)
+
+            export_bg = Image.new("RGBA", (self.bg_w, self.bg_h), (0, 0, 0, 255))
+            export_bg.paste(self.bg_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS), ((self.bg_w-scaled_w)//2, (self.bg_h-scaled_h)//2))
+
+            export_bg.save(os.path.join(res_path, "bg_plate.png"))
+            canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
+
+            # Binary patching
+            with open(target_binary, 'rb') as f:
+                data = bytearray(f.read())
+
+            orig_plugin_file = os.path.basename(base_path)
+            if is_bundle:
+                orig_plugin_file = os.path.basename(src_binary)
+            orig_name_noext = os.path.splitext(orig_plugin_file)[0]
+
+            signatures = [
+                b"PeakEater", b"peakeater", b"PEAKEATER",
+                b"Template", b"BasePlug", b"baseplug", b"BASEPLUG",
+                b"MyPlugin", b"myplugin", b"MYPLUGIN",
+            ]
+
+            if 3 <= len(orig_name_noext) <= 30:
+                for enc in ['utf-8', 'ascii']:
+                    try:
+                        sig = orig_name_noext.encode(enc)
+                        if sig not in signatures:
+                            signatures.append(sig)
+                        signatures.append(orig_name_noext.upper().encode(enc))
+                        signatures.append(orig_name_noext.lower().encode(enc))
+                    except:
+                        pass
+
+            for sig in signatures:
+                if sig in data:
+                    new_name = name.encode('utf-8')
+                    if len(new_name) <= len(sig):
+                        padded = new_name + b'\x00' * (len(sig) - len(new_name))
+                        data = data.replace(sig, padded)
+
+            # UTF-16LE patching
+            for sig in signatures:
+                try:
+                    utf16_sig = sig.decode('utf-8').encode('utf-16-le')
+                    if utf16_sig in data:
+                        utf16_name = name.encode('utf-16-le')
+                        if len(utf16_name) <= len(utf16_sig):
+                            padded = utf16_name + b'\x00' * (len(utf16_sig) - len(utf16_name))
+                            data = data.replace(utf16_sig, padded)
+                except:
+                    pass
+
+            with open(target_binary, 'wb') as f:
+                f.write(data)
+
+            # Update moduleinfo.json
             moduleinfo = {
                 "Name": name,
                 "Version": "1.0.0",
@@ -372,77 +562,20 @@ class MerjV8QuadStudio:
                         "Vendor": "MERJ",
                         "Version": "1.0.0",
                         "SDKVersion": "VST 3.7.8",
-                        "SubCategories": [
-                            "Fx"
-                        ],
+                        "SubCategories": ["Fx"],
                         "Class Flags": 0,
                         "Cardinality": 2147483647
                     }
                 ]
             }
-
-            bg_aspect = self.bg_img.width / self.bg_img.height
-            target_aspect = self.bg_w / self.bg_h
-            if bg_aspect > target_aspect:
-                scaled_w = self.bg_w
-                scaled_h = int(self.bg_w / bg_aspect)
-            else:
-                scaled_h = self.bg_h
-                scaled_w = int(self.bg_h * bg_aspect)
-
-            export_bg = Image.new("RGBA", (self.bg_w, self.bg_h), (0, 0, 0, 255))
-            export_bg.paste(self.bg_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS), ((self.bg_w-scaled_w)//2, (self.bg_h-scaled_h)//2))
-
-            export_bg.save(os.path.join(res_path, "bg_plate.png"))
-            canvas_strip.save(os.path.join(res_path, "strip_dial.png"))
-
-            # Save uidesc files
-            with open(os.path.join(res_path, "plugin.uidesc"), 'w', encoding='utf-8') as f:
-                f.write(uidesc_payload)
-            with open(os.path.join(res_path, f"{name.lower()}.uidesc"), 'w', encoding='utf-8') as f:
-                f.write(uidesc_payload)
-
-            # Save moduleinfo.json
             with open(os.path.join(res_path, "moduleinfo.json"), 'w', encoding='utf-8') as f:
                 json.dump(moduleinfo, f, indent=2)
 
-            # FIX: Better binary patching - also patch resource path strings if present
-            with open(target_binary, 'rb') as f:
-                data = f.read()
-
-            # Replace known plugin name signatures
-            for sig in [b"PeakEater", b"peakeater", b"PEAKEATER", b"Template", b"BasePlug"]:
-                if sig in data:
-                    data = data.replace(sig, name.encode('utf-8'))
-
-            # Try to patch resource/uidesc path references to point to our bundle
-            # Common patterns in VST3 binaries that reference their own resource paths
-            path_patterns = [
-                b"plugin.uidesc", b"Plugin.uidesc", b"PLUGINS.uidesc",
-                b".uidesc", b"uidesc",
-            ]
-
-            # Also try to find and replace the original plugin name in the binary
-            # with our new name for any internal resource lookups
-            orig_name = os.path.splitext(os.path.basename(self.vst_paths[0]))[0]
-            if orig_name and len(orig_name) <= 20:
-                for enc in ['utf-8', 'utf-16-le']:
-                    try:
-                        orig_bytes = orig_name.encode(enc)
-                        if orig_bytes in data and len(orig_bytes) >= 4:
-                            data = data.replace(orig_bytes, name.encode(enc))
-                    except:
-                        pass
-
-            with open(target_binary, 'wb') as f:
-                f.write(data)
-
-            # FIX: Create desktop.ini and Plugin.ico for Windows bundle recognition
+            # Windows bundle files
             desktop_ini = "[.ShellClassInfo]\nIconResource=Plugin.ico,0\n"
             with open(os.path.join(bundle_dir, "desktop.ini"), 'w', encoding='utf-8') as f:
                 f.write(desktop_ini)
 
-            # Create a simple 32x32 icon (blank black with green M)
             try:
                 ico = Image.new("RGBA", (32, 32), (8, 8, 12, 255))
                 from PIL import ImageDraw
@@ -450,9 +583,18 @@ class MerjV8QuadStudio:
                 draw.text((6, 8), "M", fill=(0, 255, 170, 255))
                 ico.save(os.path.join(bundle_dir, "Plugin.ico"), format='ICO')
             except:
-                pass  # Icon is optional
+                pass
 
-            messagebox.showinfo("merj Studio Complete", f"Success! Multi-FX compiled.\nSaved to: {bundle_dir}")
+            # Report
+            report = f"Bundle saved to: {bundle_dir}\n\n"
+            report += f"Base plugin: {'BUNDLE' if is_bundle else 'SINGLE FILE'}\n"
+            if child_plugins:
+                report += f"Child plugins copied: {', '.join(child_plugins)}\n"
+            report += f"Knobs: {len(self.knob_coords)}\n"
+            report += f"Config written to: merj.config.json\n"
+            report += f"Resources: bg_plate.png, strip_dial.png\n"
+
+            messagebox.showinfo("merj Studio Complete", report)
         except Exception as e:
             messagebox.showerror("merj Fault", f"System compilation thread crashed: {str(e)}")
 
